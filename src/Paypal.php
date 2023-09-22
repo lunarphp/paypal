@@ -46,7 +46,7 @@ class Paypal implements PaypalInterface
     public function capture(string $orderId)
     {
         return $this->baseHttpClient()->withToken($this->getAccessToken())
-            ->withBody('')
+            ->withBody('', 'application/json')
             ->post("/v2/checkout/orders/{$orderId}/capture")
             ->json();
     }
@@ -59,6 +59,8 @@ class Paypal implements PaypalInterface
     {
         $billingAddress = $cart->billingAddress;
         $shippingAddress = $cart->shippingAddress ?: $billingAddress;
+
+        $successRoute = config('lunar.payments.paypal.success_route', 'checkout.success');
 
         $requestData = [
             'intent' => 'CAPTURE',
@@ -87,13 +89,13 @@ class Paypal implements PaypalInterface
                     'shipping_preference' => 'SET_PROVIDED_ADDRESS',
                     'payment_method_preference' => 'IMMEDIATE_PAYMENT_REQUIRED',
                     'email' => $billingAddress?->contact_email,
-                    'return_url' => route('checkout.success'),
-                    'cancel_url' => route('checkout.index', $cart->fingerprint()),
+                    'return_url' => route($successRoute),
+                    'cancel_url' => route($successRoute, $cart->fingerprint()),
                     'name' => [
                         'given_name' => $billingAddress?->first_name,
                         'surname' => $billingAddress?->last_name,
                     ],
-                    'email_address' => $billingAddress->email,
+                    'email_address' => $billingAddress->contact_email,
                     'address' => [
                         'address_line_1' => $billingAddress?->line_one,
                         'address_line_2' => $billingAddress?->line_two,
@@ -107,7 +109,7 @@ class Paypal implements PaypalInterface
         ];
 
         return $this->baseHttpClient()->withToken($this->getAccessToken())->withBody(
-            json_encode($requestData)
+            json_encode($requestData), 'application/json'
         )->post('v2/checkout/orders')->json();
     }
 }
