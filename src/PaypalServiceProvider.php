@@ -2,9 +2,7 @@
 
 namespace Lunar\Paypal;
 
-use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
-use Livewire\Livewire;
 use Lunar\Facades\Payments;
 
 class PaypalServiceProvider extends ServiceProvider

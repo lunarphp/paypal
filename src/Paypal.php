@@ -2,8 +2,8 @@
 
 namespace Lunar\Paypal;
 
-use Lunar\Models\Cart;
 use Illuminate\Support\Facades\Http;
+use Lunar\Models\Cart;
 
 class Paypal implements PaypalInterface
 {
@@ -19,7 +19,7 @@ class Paypal implements PaypalInterface
     public function getApiUrl()
     {
         return config('services.paypal.env', 'sandbox') == 'sandbox' ?
-            'https://api-m.sandbox.paypal.com':
+            'https://api-m.sandbox.paypal.com' :
             'https://api-m.live.paypal.com';
     }
 
@@ -31,7 +31,7 @@ class Paypal implements PaypalInterface
         )->asForm()->post(
             'v1/oauth2/token',
             [
-                'grant_type' => 'client_credentials'
+                'grant_type' => 'client_credentials',
             ]
         )->json()['access_token'] ?? null;
     }
@@ -51,10 +51,20 @@ class Paypal implements PaypalInterface
             ->json();
     }
 
-    /**
-     * @param Cart $cart
-     * @return array
-     */
+    public function refund($transactionId, string $amount, string $currencyCode)
+    {
+        return $this->baseHttpClient()->withToken($this->getAccessToken())
+            ->withBody(json_encode([
+                'amount' => [
+                    'value' => $amount,
+                    'currency_code' => $currencyCode,
+                ],
+            ]), 'application/json')
+            ->post("/v2/payments/captures/{$transactionId}/refund")
+            ->throw()
+            ->json();
+    }
+
     public function buildInitialOrder(Cart $cart): array
     {
         $billingAddress = $cart->billingAddress;
@@ -75,7 +85,7 @@ class Paypal implements PaypalInterface
                             'admin_area_1' => $shippingAddress?->state,
                             'postal_code' => $shippingAddress?->postcode,
                             'country_code' => $shippingAddress?->country?->iso2,
-                        ]
+                        ],
                     ],
                     'amount' => [
                         'currency_code' => $cart->currency->code,

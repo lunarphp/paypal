@@ -2,14 +2,14 @@
 
 namespace Lunar\Paypal;
 
-use Illuminate\Support\Str;
+use Illuminate\Http\Client\HttpClientException;
+use Lunar\Base\DataTransferObjects\PaymentAuthorize;
 use Lunar\Base\DataTransferObjects\PaymentCapture;
 use Lunar\Base\DataTransferObjects\PaymentRefund;
-use Lunar\Base\DataTransferObjects\PaymentAuthorize;
+use Lunar\Events\PaymentAttemptEvent;
 use Lunar\Models\Transaction;
 use Lunar\PaymentTypes\AbstractPayment;
 use Lunar\Paypal\Facades\Paypal;
-use Lunar\Models\Currency;
 
 class PaypalPaymentType extends AbstractPayment
 {
@@ -30,8 +30,6 @@ class PaypalPaymentType extends AbstractPayment
 
     /**
      * Authorize the payment for processing.
-     *
-     * @return \Lunar\Base\DataTransferObjects\PaymentAuthorize
      */
     public function authorize(): PaymentAuthorize
     {
@@ -43,10 +41,16 @@ class PaypalPaymentType extends AbstractPayment
 
         if ($this->order->placed_at) {
             // Somethings gone wrong!
-            return new PaymentAuthorize(
+            $failure = new PaymentAuthorize(
                 success: false,
                 message: 'This order has already been placed',
+                orderId: $this->order->id,
+                paymentType: 'paypal',
             );
+
+            PaymentAttemptEvent::dispatch($failure);
+
+            return $failure;
         }
 
         $paypalOrder = Paypal::getOrder(
@@ -54,9 +58,15 @@ class PaypalPaymentType extends AbstractPayment
         );
 
         if (isset($paypalOrder['name']) && $paypalOrder['name'] == 'RESOURCE_NOT_FOUND') {
-            return new PaymentAuthorize(
+            $failedResponse = new PaymentAuthorize(
                 success: false,
+                orderId: $this->order?->id,
+                paymentType: 'paypal',
             );
+
+            PaymentAttemptEvent::dispatch($failedResponse);
+
+            return $failedResponse;
         }
 
         if ($paypalOrder['status'] == 'APPROVED') {
@@ -96,24 +106,34 @@ class PaypalPaymentType extends AbstractPayment
             'placed_at' => now(),
         ]);
 
-        return new PaymentAuthorize(
+        $response = new PaymentAuthorize(
             success: true,
+            orderId: $this->order->id,
+            paymentType: 'paypal',
         );
+
+        PaymentAttemptEvent::dispatch($response);
+
+        return $response;
     }
 
     private function failAuthorize()
     {
-        return new PaymentAuthorize(
+        $response = new PaymentAuthorize(
             success: false,
+            orderId: $this->order?->id,
+            paymentType: 'paypal',
         );
+
+        PaymentAttemptEvent::dispatch($response);
+
+        return $response;
     }
 
     /**
      * Capture a payment for a transaction.
      *
-     * @param  \Lunar\Models\Transaction  $transaction
      * @param  int  $amount
-     * @return \Lunar\Base\DataTransferObjects\PaymentCapture
      */
     public function capture(Transaction $transaction, $amount = 0): PaymentCapture
     {
@@ -123,16 +143,40 @@ class PaypalPaymentType extends AbstractPayment
     /**
      * Refund a captured transaction
      *
-     * @param  \Lunar\Models\Transaction  $transaction
-     * @param  int  $amount
      * @param  string|null  $notes
-     * @return \Lunar\Base\DataTransferObjects\PaymentRefund
      */
     public function refund(Transaction $transaction, int $amount = 0, $notes = null): PaymentRefund
     {
 
-        return new PaymentRefund(
-            success: true
-        );
+        $currencyCode = $transaction->order->currency_code;
+
+        try {
+            $response = Paypal::refund(
+                $transaction->reference,
+                (string) ($amount / 100),
+                $currencyCode
+            );
+
+            $transaction->order->transactions()->create([
+                'success' => true,
+                'type' => 'refund',
+                'driver' => 'paypal',
+                'amount' => $amount,
+                'reference' => $response['id'] ?? $transaction->reference,
+                'status' => $response['status'] ?? 'COMPLETED',
+                'notes' => $notes,
+                'card_type' => $transaction->card_type,
+                'last_four' => $transaction->last_four,
+            ]);
+
+            return new PaymentRefund(
+                success: true
+            );
+        } catch (HttpClientException $e) {
+            return new PaymentRefund(
+                success: false,
+                message: $e->getMessage(),
+            );
+        }
     }
 }
