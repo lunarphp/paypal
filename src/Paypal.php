@@ -2,16 +2,16 @@
 
 namespace Lunar\Paypal;
 
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
-use Lunar\Models\Cart;
-use Lunar\Models\Contracts\Cart as CartContract;
+use Lunar\Core\Models\Cart;
 
 class Paypal implements PaypalInterface
 {
     private $accessToken;
 
     /**
-     * @return Illuminate\Http\Client\PendingRequest
+     * @return PendingRequest
      */
     public function baseHttpClient()
     {
@@ -84,7 +84,7 @@ class Paypal implements PaypalInterface
             ->json();
     }
 
-    public function buildInitialOrder(CartContract $cart): array
+    public function buildInitialOrder(Cart $cart): array
     {
         /** @var Cart $cart */
         $billingAddress = $cart->billingAddress;
@@ -109,7 +109,7 @@ class Paypal implements PaypalInterface
                     ],
                     'amount' => [
                         'currency_code' => $cart->currency->code,
-                        'value' => (string) $cart->total->decimal,
+                        'value' => (string) $cart->total->decimal(),
                     ],
                 ],
             ],
