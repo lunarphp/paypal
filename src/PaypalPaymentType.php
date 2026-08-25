@@ -71,7 +71,7 @@ class PaypalPaymentType extends AbstractPayment
         }
 
         if ($paypalOrder['status'] == 'APPROVED') {
-            $paypalOrder = Paypal::capture($paypalOrderId);
+            $paypalOrder = PayPal::capture($paypalOrderId);
 
             if (($paypalOrder['status'] ?? null) != 'COMPLETED') {
                 return $this->failAuthorize();
